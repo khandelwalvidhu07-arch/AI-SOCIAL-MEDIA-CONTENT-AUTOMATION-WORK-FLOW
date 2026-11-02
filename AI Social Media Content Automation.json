@@ -1,0 +1,375 @@
+{
+  "name": "AI Social Media Content Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyWeek",
+              "hour": 9
+            }
+          ]
+        },
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1hF_TRSPcLe8CrUnAKRW7EnM3cHF-PeqEQ6OCkoJxn1U"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gid=0",
+          "cachedResultName": "Sheet1"
+        },
+        "event": "rowAdded",
+        "options": {}
+      },
+      "id": "d70a542e-9c7d-411b-a470-427b4033ca77",
+      "name": "New Article in Sheet",
+      "type": "n8n-nodes-base.googleSheetsTrigger",
+      "typeVersion": 1,
+      "position": [
+        -512,
+        -144
+      ],
+      "credentials": {
+        "googleSheetsTriggerOAuth2Api": {
+          "id": "EjTwksIDzadF0ByL",
+          "name": "Google Sheets Trigger account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ ($json['Article URL'] || Object.values($json).find(v => typeof v === 'string' && v.trim().startsWith('http')) || '').trim() }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "0b639534-70e5-4064-80e0-ac2f138369f5",
+      "name": "Fetch Article",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -288,
+        -128
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "extractHtmlContent",
+        "extractionValues": {
+          "values": [
+            {
+              "key": "content",
+              "cssSelector": "body",
+              "skipSelectors": "script,style,nav,footer,header,aside"
+            }
+          ]
+        },
+        "options": {
+          "trimValues": true,
+          "cleanUpText": true
+        }
+      },
+      "id": "3dab1377-1cbd-47d8-bcce-09fc2274f725",
+      "name": "Extract Article Text",
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1.2,
+      "position": [
+        -48,
+        -128
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Summarize the following article into 5-7 concise key points. Keep facts accurate and do not add information that is not in the article.\n\nTitle: {{ $('New Article in Sheet').item.json.Title || '' }}\nURL: {{ ($('New Article in Sheet').item.json['Article URL'] || Object.values($('New Article in Sheet').item.json).find(v => typeof v === 'string' && v.trim().startsWith('http')) || '') }}\n\nArticle:\n{{ ($json.content || '').slice(0, 20000) }}",
+        "batching": {}
+      },
+      "id": "d01b42a6-0ad8-4cab-9a2b-1a8e9e669a4f",
+      "name": "Summarize Article",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        176,
+        -128
+      ]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.8-flash",
+        "options": {
+          "temperature": 0.5
+        }
+      },
+      "id": "272a35d6-d854-43c4-9291-b8c2408c62e6",
+      "name": "Gemini (Summary)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        176,
+        64
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": null,
+          "name": "Gateway credits",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Write a professional LinkedIn post about my learning, based on this article summary. Use a hook in the first line, 3-5 short paragraphs or bullet points, a takeaway, and 3-5 relevant tech hashtags at the end. Keep it under 2500 characters. Return only the post text, no preamble or quotes.\n\nArticle URL: {{ ($('New Article in Sheet').item.json['Article URL'] || Object.values($('New Article in Sheet').item.json).find(v => typeof v === 'string' && v.trim().startsWith('http')) || '') }}\n\nSummary:\n{{ $json.text }}",
+        "batching": {}
+      },
+      "id": "dac7f07f-b3c8-4a3f-ae99-8a653c2f5da4",
+      "name": "Write LinkedIn Post",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        512,
+        -144
+      ]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.8-flash",
+        "options": {
+          "temperature": 0.5
+        }
+      },
+      "id": "1460f37f-ad72-4735-9d50-c8702c2d89ca",
+      "name": "Gemini (LinkedIn)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        512,
+        48
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": null,
+          "name": "Gateway credits",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "sendTo": "vidhurajkhandelwal@gmail.com",
+        "subject": "Approve LinkedIn post?",
+        "message": "=Here is the LinkedIn post drafted from your new article. Approve to publish it publicly, or Decline to skip it.<br><br>{{ $json.text.trim().split(\"\\n\").join(\"<br>\") }}",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double",
+            "approveLabel": "Approve & Post"
+          }
+        },
+        "options": {
+          "limitWaitTime": {
+            "values": {
+              "resumeAmount": 3,
+              "resumeUnit": "days"
+            }
+          }
+        }
+      },
+      "id": "ba624533-bfff-41b8-b546-aa4d16f04acd",
+      "name": "Ask for Approval",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        864,
+        -144
+      ],
+      "webhookId": "ee89f9bd-625c-4913-9e8b-ea88c597b4c4",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Trdtv6op0tMXMDKQ",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "approved",
+              "leftValue": "={{ $json.data?.approved }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "647e2378-d662-47f1-8c7c-769f773c5315",
+      "name": "Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        784,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "person": "u0NSVnREjm",
+        "text": "={{ $('Write LinkedIn Post').item.json.text.trim().slice(0, 2900) }}",
+        "additionalFields": {
+          "visibility": "PUBLIC"
+        }
+      },
+      "id": "e33f7eb7-03b4-43fa-a713-645acd32c10d",
+      "name": "Post to LinkedIn",
+      "type": "n8n-nodes-base.linkedIn",
+      "typeVersion": 1,
+      "position": [
+        1024,
+        144
+      ],
+      "credentials": {
+        "linkedInOAuth2Api": {
+          "id": "PssxG0mO9dbbRjPv",
+          "name": "LinkedIn account 2"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "New Article in Sheet": {
+      "main": [
+        [
+          {
+            "node": "Fetch Article",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Article": {
+      "main": [
+        [
+          {
+            "node": "Extract Article Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Article Text": {
+      "main": [
+        [
+          {
+            "node": "Summarize Article",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize Article": {
+      "main": [
+        [
+          {
+            "node": "Write LinkedIn Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini (Summary)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Summarize Article",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write LinkedIn Post": {
+      "main": [
+        [
+          {
+            "node": "Ask for Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini (LinkedIn)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Write LinkedIn Post",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask for Approval": {
+      "main": [
+        [
+          {
+            "node": "Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approved?": {
+      "main": [
+        [
+          {
+            "node": "Post to LinkedIn",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "versionId": "dad48ce2-0548-40ef-8888-24114479aeab",
+  "meta": {
+    "instanceId": "341d9b14400a889686482a166a90fe30eb7319e6e34b30e5060fbe4cd9c2f1c6"
+  },
+  "nodeGroups": [],
+  "id": "3fFch29ca7Vp0otw",
+  "tags": []
+}
